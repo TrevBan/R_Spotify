@@ -338,7 +338,7 @@ ggplot(centers, aes(x = reorder(variable, value), y = value)) +
 
 colnames(over_80)
 
-# 3d visualizations for hell of it
+# 3d visualizations test
 
 plot_ly(x = over_80$acousticness, 
         y = over_80$danceability, 
