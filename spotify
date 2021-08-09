@@ -1,0 +1,441 @@
+# import libraries
+library(Hmisc)
+library(grid)
+library(gridExtra)
+library(plyr)
+library(tidyverse)  
+library(cluster)    
+library(tidyr)  
+library(dplyr)  
+library(skimr)  
+library(ggplot2)  
+library(ggthemes)  
+library(ggcorrplot)
+library(corrplot)
+library(plotly)  
+library(timetk)  
+library(httr)
+library(readr)
+library(factoextra)
+
+# import datasets
+# from https://www.kaggle.com/yamaerenay/spotify-dataset-19212020-160k-tracks?select=tracks.csv
+
+artists = read.csv('artists.csv')
+df_artists = read.csv('data_by_artist_o.csv')
+df_genre = read.csv('data_by_genres_o.csv')
+df_years = read.csv('data_by_year_o.csv')
+df = read.csv('data_o.csv')
+tracks = read.csv('tracks.csv')
+
+#Check for missing variables
+
+sum(is.na(tracks)) # 0 missing
+sum(is.na(df_artists)) # 0 missing
+sum(is.na(df_genre)) # 0 missing
+sum(is.na(df_years)) # 0 missing
+sum(is.na(df)) # 0 missing
+sum(is.na(artists)) # 13 missing
+
+# get rid of missing artists
+artists <- na.omit(artists)
+sum(is.na(artists)) # now 0 missing
+
+# Introducing Spotify 
+# data from https://backlinko.com/spotify-users 
+
+year=c(2015, 2016, 2017, 2018, 2019, 2020)
+monthly_users = c(91, 123, 160, 217, 271, 345)
+
+df_temp = data.frame(
+  year,
+  monthly_users
+)
+
+ggplot(data=df_temp, aes(year, monthly_users)) +
+  geom_smooth(color='#191414') +
+  geom_ribbon(aes(ymin = 0,ymax = predict(loess(monthly_users ~ year))),
+              alpha = 0.5,fill = '#1DB954') +
+  labs(title='Spotify Monthly Users by Year', x='Year', y='Monthly Users')
+
+# set duration from ms to minutes
+
+tracks$duration_ms = tracks$duration_ms/60000
+colnames(tracks)[4] = 'duration_ms'
+colnames(tracks)
+
+# let's normalize a few features (in an admittedly clunky way)
+
+df_years <- df_years %>%
+  mutate(duration_adj = ((duration_ms/60000)-3)/1.3)
+
+df_years <- df_years %>%
+  mutate(duration = duration_ms/60000)
+
+df_years <- df_years %>%
+  mutate(loudness_adj = (loudness + 16)/20 + .25)
+
+tracks <- tracks %>%
+  mutate(loudness_adj = (loudness + 16)/20 + .25)
+
+df_years <- df_years %>%
+  mutate(popularity_adj = (popularity/65))
+
+# count comma separated artist names and turn this into a logical, creating a logical collaborate column
+
+tracks <- tracks %>%
+  mutate(collaboration = str_count(tracks$artists, ",")) %>%
+  mutate(collaboration = as.logical(collaboration))
+
+# introduce a year column 
+
+tracks$release_date = substring(tracks$release_date, 1, 4)
+tracks$year = as.integer(tracks$release_date)
+
+# yearly trends
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_smooth(aes(y=acousticness, color="Acousticness"), se=FALSE, size=1) + 
+  geom_smooth(aes(y=danceability, color="Danceability"), se=FALSE) + 
+  geom_smooth(aes(y=energy, color="Energy"), se=FALSE) + 
+  geom_smooth(aes(y=instrumentalness, color="Instrumentalness"), se=FALSE) + 
+  geom_smooth(aes(y=liveness, color="Liveness"), se=FALSE) + 
+  geom_smooth(aes(y=speechiness, color="Speechiness"), se=FALSE) + 
+  geom_smooth(aes(y=valence, color='Valence'), se=FALSE) +
+  geom_smooth(aes(y=duration_adj, color='Duration'), se=FALSE) +
+  geom_smooth(aes(y=loudness_adj, color='Loudness'), se=FALSE) +
+  geom_smooth(aes(y=popularity_adj, color='Popularity'), se=FALSE) +
+  scale_colour_manual(name="Audio Characteristics", values=c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", 'black', 'green')) +
+  labs(title = 'Audio Characteristics by Year',
+       x = 'Year',
+       y = NULL) 
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_smooth(aes(y=acousticness, color="Acousticness"), se=FALSE) + 
+  geom_smooth(aes(y=danceability, color="Danceability"), se=FALSE) + 
+  geom_smooth(aes(y=energy, color="Energy"), se=FALSE) + 
+  geom_smooth(aes(y=instrumentalness, color="Instrumentalness"), se=FALSE) + 
+  geom_smooth(aes(y=liveness, color="Liveness"), se=FALSE) + 
+  geom_smooth(aes(y=speechiness, color="Speechiness"), se=FALSE) + 
+  geom_smooth(aes(y=valence, color='Valence'), se=FALSE) +
+  geom_smooth(aes(y=duration_adj, color='Duration'), se=FALSE) +
+  geom_smooth(aes(y=loudness_adj, color='Loudness'), se=FALSE) +
+  geom_smooth(aes(y=popularity_adj, color='Popularity'), se=FALSE) +
+  scale_colour_manual(name="Audio Characteristics", values=c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", 'black', 'green')) + 
+  xlim(1990, 2020) + 
+  labs(title = 'Audio Characteristics by Year',
+       x = 'Year',
+       y = NULL) 
+
+# a few trends in particular characteristics
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_line(aes(y=duration), color="#191414", size=.8) + 
+  geom_smooth(aes(y=duration), method = 'gam', color='#1DB954', size=1.5) +
+  labs(title='Song Duration by Year', x='Year', y='Duration in Minutes')
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_line(aes(y=valence), color="#191414", size=.8) + 
+  geom_smooth(aes(y=valence), method = 'gam', color='#1DB954', size=1.5) +
+  labs(title='Song Valence by Year', x='Year', y='Valence') +
+  xlim(1980, 2021)
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_line(aes(y=acousticness), color="#191414", size=.8) + 
+  geom_smooth(aes(y=acousticness), method = 'gam', color='#1DB954', size=1.5) +
+  labs(title='Song Acousticness by Year', x='Year', y='Acousticness')
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_line(aes(y=acousticness), color="#191414", size=.8) + 
+  geom_line(aes(y=energy), color="#191414", size=.8) + 
+  geom_smooth(aes(y=acousticness, color='Acousticness'), size=1.5) +
+  geom_smooth(aes(y=energy, color='Energy'), size=1.5) +
+  scale_colour_manual(name="Audio Characteristics", values=c("#1DB954", "#85557f")) +
+  labs(title='Song Acousticness and Energy by Year', x='Year', y=NULL)
+
+ggplot(data=df_years, aes(x=year)) +
+  geom_line(aes(y=popularity), color='#191414', size=1) +
+  geom_smooth(aes(y=popularity), method= 'gam', color='#1DB954', size=1.2) +
+  xlim(1980, 2021) +
+  ylim(35,70) +
+  geom_label(
+    label="Spotify Founded", 
+    x=2006,
+    y=53,
+    label.size = 0.1,
+    color = "#191414",
+  ) + 
+  geom_point(aes(x=2006, y=50.5), size=6, color='#1DB954') +
+  labs(title='Song Popularity by Year', x='Year', y='Popularity')
+
+tracks %>% group_by(popularity) %>%
+  summarize(count = n()) %>% 
+  ggplot(aes(x = popularity, y = count)) + geom_histogram(stat = "identity", color = 1, fill = "steelblue") +
+  theme_bw() + labs(title = "Distribution of Popularity of songs", x = "Popularity", y = "Count")
+
+# Now for a correlation Matrix
+
+draw_corr <- function(tracks, cols, sort_col, threshold) {
+  
+  all_num_values <- tracks[, cols]
+  cor_mtx <- cor(all_num_values, use="pairwise.complete.obs")
+  
+  cor_sorted <- as.matrix(sort(cor_mtx[, sort_col], decreasing = TRUE))
+  
+  cor_threshold <- names(which(apply(cor_sorted, 1, function(x) abs(x)>threshold)))
+  cor_mtx <- cor_mtx[cor_threshold, cor_threshold]
+  corrplot.mixed(cor_mtx, tl.col="black", tl.pos = "lt")
+}
+
+
+track_feats <- c('popularity', 'valence', 'acousticness', 'danceability', 'energy', 'instrumentalness', 'loudness', 'explicit', 'year', 'tempo', 'collaboration')
+draw_corr(tracks, track_feats, "popularity", 0)
+
+# create new dataframe of only 2020, 2021 music
+
+new_tracks = filter(tracks, tracks$year > 2019)
+colnames(new_tracks)
+track_feats <- c('popularity', 'valence', 'acousticness', 'danceability', 'energy', 'instrumentalness', 'loudness', 'explicit', 'tempo', 'collaboration')
+draw_corr(new_tracks, track_feats, "popularity", 0)
+
+# What features do popular songs in the years 2020-2021 have in common?
+
+df_1 <- new_tracks %>% group_by(popularity) %>% 
+  summarize(popularity = unique(popularity), acousticness = mean(acousticness), danceability = mean(danceability), energy = mean(energy), liveness = mean(liveness), loudness = mean(loudness_adj),valence = mean(valence), collaboration=mean(collaboration), explicit=mean(explicit)) 
+
+ggplot(data=df_1, aes(x=popularity)) +
+  geom_smooth(aes(y=acousticness, color="Acousticness")) + 
+  geom_point(aes(y=acousticness), color='black', size=0.5) +
+  geom_smooth(aes(y=danceability, color="Danceability")) + 
+  geom_point(aes(y=danceability), color='#56B4E9', size=0.5) +
+  geom_smooth(aes(y=energy, color="Energy")) + 
+  geom_point(aes(y=energy), color='#009E73', size=0.5) +
+  geom_smooth(aes(y=liveness, color="Liveness")) + 
+  geom_point(aes(y=liveness), color='#0072B2', size=0.5) +
+  geom_smooth(aes(y=loudness, color="Loudness")) +
+  geom_point(aes(y=loudness), color='yellow', size=0.5) +
+  geom_smooth(aes(y=valence, color="Valence")) + 
+  geom_point(aes(y=valence), color='red', size=0.5) +
+  geom_smooth(aes(y=collaboration, color="Collaboration")) + 
+  geom_point(aes(y=collaboration), color='#E69F00', size=0.5) +
+  geom_smooth(aes(y=explicit, color="Explicit")) + 
+  geom_point(aes(y=explicit), color='magenta', size=0.5) +
+  scale_colour_manual(name="Audio Characteristics", values=c("black", "#E69F00", "#56B4E9", "#009E73", "magenta", "#0072B2", 'yellow', 'red')) +
+  labs(title = 'Audio Characteristics by Popularity Since 2020',
+       x = 'Popularity',
+       y = NULL) +
+  ylim(0.1,.8) +
+  xlim(0,100)
+
+# separate into popular and unpopular new songs
+over_80 = filter(new_tracks, new_tracks$popularity >= 80)
+under_80 = filter(new_tracks, new_tracks$popularity < 80)
+
+over_80 %>% summarise(mean(collaboration))
+under_80 %>% summarise(mean(collaboration))
+
+# just curious about these acoustic popular songs
+acoustic <- filter(over_80, acousticness > .8)
+acoustic$name
+
+# compare correlation matrix with that of the early oughts
+newish_tracks = filter(tracks, tracks$year < 2010 & tracks$year > 2000)
+
+track_feats <- c('popularity', 'collaboration', 'acousticness', 'danceability', 'energy', 'instrumentalness', 'loudness', 'explicit', 'year', 'tempo')
+draw_corr(newish_tracks, track_feats, "popularity", 0)
+
+# kmeans for finding optimal clusters for popularity
+# first attempt at kmeans has many features
+
+colnames(new_tracks)
+
+str(new_tracks)
+df_kmeans <- new_tracks %>% select(-name,-artists,-id, -release_date, -year, -id_artists, -loudness)
+colnames(df_kmeans)
+
+df_scale <- scale(df_kmeans)
+
+df_scale
+
+wss <- function(k) {
+  kmeans(df_scale, k, nstart = 10 )$tot.withinss
+}
+k.values <- 1:16
+wss_values <- map_dbl(k.values, wss)
+plot(k.values, wss_values,
+     type="b", pch = 20, frame = TRUE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+kmeans_df <- kmeans(df_scale, centers = 6, nstart = 25)
+
+fviz_cluster(kmeans_df, 
+             data = df_scale, 
+             ellipse.type = "norm", 
+             palette = "jco", 
+             ggtheme = theme_minimal(),
+             geom='point',
+             pointsize=.2,
+             xlab=FALSE,
+             ylab=FALSE)
+
+
+centers <- data.frame(cluster = rownames(kmeans_df$centers), kmeans_df$centers)
+centers <- reshape2::melt(centers)
+ggplot(centers, aes(x = reorder(variable, value), y = value)) +
+  geom_bar(aes(fill = value > 0), width=0.8, stat = "identity") +
+  facet_wrap(~ cluster, nrow=1) +
+  coord_flip() +
+  theme_bw() +
+  theme(panel.border = element_rect(colour = "black", fill=NA), legend.position="none") +
+  labs(x = NULL)
+
+# kmeans with fewer features
+# I removed the features that didn't show much variation in the above plots
+
+colnames(df_kmeans)
+
+str(new_tracks)
+df_kmeans <- new_tracks %>% select(-name,-artists,-id, -release_date, -year, -id_artists, -loudness, -duration_ms, -key, -tempo, -mode, -time_signature)
+colnames(df_kmeans)
+
+df_scale <- scale(df_kmeans)
+
+df_scale
+
+wss <- function(k) {
+  kmeans(df_scale, k, nstart = 100 )$tot.withinss
+}
+k.values <- 1:11
+wss_values <- map_dbl(k.values, wss)
+plot(k.values, wss_values,
+     type="b", pch = 20, frame = TRUE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+kmeans_df <- kmeans(df_scale, centers = 5, nstart = 10)
+
+fviz_cluster(kmeans_df, 
+             data = df_scale, 
+             ellipse.type = "norm", 
+             palette = "set2", 
+             ggtheme = theme_minimal(),
+             geom='point',
+             pointsize=.4,
+             xlab=FALSE,
+             ylab=FALSE)
+
+centers <- data.frame(cluster = rownames(kmeans_df$centers), kmeans_df$centers)
+centers <- reshape2::melt(centers)
+
+ggplot(centers, aes(x = reorder(variable, value), y = value)) +
+  geom_bar(aes(fill = value > 0), width=0.8, stat = "identity") +
+  facet_wrap(~ cluster, nrow=2) +
+  coord_flip() +
+  theme_bw() +
+  theme(panel.border = element_rect(colour = "black", fill=NA), legend.position="none") +
+  labs(x = NULL)
+
+colnames(over_80)
+
+# 3d visualizations for hell of it
+
+plot_ly(x = over_80$acousticness, 
+        y = over_80$danceability, 
+        z = over_80$popularity, 
+        color = ~over_80$energy,
+        sphere.size = .01,
+        type = "scatter3d", 
+        mode = "markers") %>%
+  layout(title = "",
+         scene = list(xaxis = list(title = "Acousticness"),
+                      yaxis = list(title = "Danceability"),
+                      zaxis = list(title = "Popularity")))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# a quick look at genres
+
+colnames(df_genre)
+
+genre_pop <- df_genre %>%
+  filter(df_genre, popularity > 70)
+
+genre_pop
+genre <- df_genre %>% select(-mode,-duration_ms,-tempo, -key, -genres)
+
+genre_pop <- filter(genre, popularity > 70)
+
+genre_pop$genre
+
+
+colnames(genre)
+
+
+df_scale <- scale(genre)
+
+df_scale
+
+wss <- function(k) {
+  kmeans(df_scale, k, nstart = 9 )$tot.withinss
+}
+k.values <- 1:10
+wss_values <- map_dbl(k.values, wss)
+plot(k.values, wss_values,
+     type="b", pch = 20, frame = TRUE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+kmeans_df <- kmeans(df_scale, centers = 5, nstart = 10)
+
+fviz_cluster(kmeans_df, 
+             data = df_scale, 
+             ellipse.type = "norm", 
+             palette = "set2", 
+             ggtheme = theme_minimal(),
+             geom='point',
+             pointsize=.4,
+             xlab=FALSE,
+             ylab=FALSE)
+
+centers <- data.frame(cluster = rownames(kmeans_df$centers), kmeans_df$centers)
+centers <- reshape2::melt(centers)
+
+ggplot(centers, aes(x = reorder(variable, value), y = value)) +
+  geom_bar(aes(fill = value > 0), width=0.8, stat = "identity") +
+  facet_wrap(~ cluster, nrow=2) +
+  coord_flip() +
+  theme_bw() +
+  theme(panel.border = element_rect(colour = "black", fill=NA), legend.position="none") +
+  labs(x = NULL)
+
+
+
+
+
+
+
+
