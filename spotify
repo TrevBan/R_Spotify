@@ -56,7 +56,7 @@ ggplot(data=df_temp, aes(year, monthly_users)) +
   geom_smooth(color='#191414') +
   geom_ribbon(aes(ymin = 0,ymax = predict(loess(monthly_users ~ year))),
               alpha = 0.5,fill = '#1DB954') +
-  labs(title='Spotify Monthly Users by Year', x='Year', y='Monthly Users')
+  labs(title='Spotify Monthly Users by Year', x='Year', y='Monthly Users in Millions')
 
 # set duration from ms to minutes
 
@@ -169,24 +169,20 @@ ggplot(data=df_years, aes(x=year)) +
   labs(title='Song Popularity by Year', x='Year', y='Popularity')
 
 tracks %>% group_by(popularity) %>%
-  summarize(count = n()) %>% 
-  ggplot(aes(x = popularity, y = count)) + geom_histogram(stat = "identity", color = 1, fill = "steelblue") +
+  dplyr::summarise(count = n()) %>% 
+  ggplot(aes(x = popularity, y = count)) + geom_histogram(stat = "identity", color = 1, fill = "#1DB954") +
   theme_bw() + labs(title = "Distribution of Popularity of songs", x = "Popularity", y = "Count")
 
 # Now for a correlation Matrix
 
 draw_corr <- function(tracks, cols, sort_col, threshold) {
-  
   all_num_values <- tracks[, cols]
   cor_mtx <- cor(all_num_values, use="pairwise.complete.obs")
-  
   cor_sorted <- as.matrix(sort(cor_mtx[, sort_col], decreasing = TRUE))
-  
   cor_threshold <- names(which(apply(cor_sorted, 1, function(x) abs(x)>threshold)))
   cor_mtx <- cor_mtx[cor_threshold, cor_threshold]
   corrplot.mixed(cor_mtx, tl.col="black", tl.pos = "lt")
 }
-
 
 track_feats <- c('popularity', 'valence', 'acousticness', 'danceability', 'energy', 'instrumentalness', 'loudness', 'explicit', 'year', 'tempo', 'collaboration')
 draw_corr(tracks, track_feats, "popularity", 0)
@@ -201,7 +197,7 @@ draw_corr(new_tracks, track_feats, "popularity", 0)
 # What features do popular songs in the years 2020-2021 have in common?
 
 df_1 <- new_tracks %>% group_by(popularity) %>% 
-  summarize(popularity = unique(popularity), acousticness = mean(acousticness), danceability = mean(danceability), energy = mean(energy), liveness = mean(liveness), loudness = mean(loudness_adj),valence = mean(valence), collaboration=mean(collaboration), explicit=mean(explicit)) 
+  dplyr::summarise(popularity = unique(popularity), acousticness = mean(acousticness), danceability = mean(danceability), energy = mean(energy), liveness = mean(liveness), loudness = mean(loudness_adj),valence = mean(valence), collaboration=mean(collaboration), explicit=mean(explicit)) 
 
 ggplot(data=df_1, aes(x=popularity)) +
   geom_smooth(aes(y=acousticness, color="Acousticness")) + 
@@ -249,6 +245,8 @@ draw_corr(newish_tracks, track_feats, "popularity", 0)
 
 colnames(new_tracks)
 
+new_tracks
+
 str(new_tracks)
 df_kmeans <- new_tracks %>% select(-name,-artists,-id, -release_date, -year, -id_artists, -loudness)
 colnames(df_kmeans)
@@ -267,7 +265,7 @@ plot(k.values, wss_values,
      xlab="Number of clusters K",
      ylab="Total within-clusters sum of squares")
 
-kmeans_df <- kmeans(df_scale, centers = 6, nstart = 25)
+kmeans_df <- kmeans(df_scale, centers = 5, nstart = 25)
 
 fviz_cluster(kmeans_df, 
              data = df_scale, 
@@ -304,7 +302,7 @@ df_scale <- scale(df_kmeans)
 df_scale
 
 wss <- function(k) {
-  kmeans(df_scale, k, nstart = 100 )$tot.withinss
+  kmeans(df_scale, k, nstart = 10 )$tot.withinss
 }
 k.values <- 1:11
 wss_values <- map_dbl(k.values, wss)
@@ -330,7 +328,7 @@ centers <- reshape2::melt(centers)
 
 ggplot(centers, aes(x = reorder(variable, value), y = value)) +
   geom_bar(aes(fill = value > 0), width=0.8, stat = "identity") +
-  facet_wrap(~ cluster, nrow=1) +
+  facet_wrap(~ cluster, nrow=2) +
   coord_flip() +
   theme_bw() +
   theme(panel.border = element_rect(colour = "black", fill=NA), legend.position="none") +
@@ -341,39 +339,18 @@ colnames(over_80)
 # 3d visualizations for hell of it
 
 plot_ly(x = over_80$acousticness, 
-        y = over_80$danceability, 
-        z = over_80$popularity, 
-        color = ~over_80$energy,
-        sphere.size = .01,
-        type = "scatter3d", 
-        mode = "markers") %>%
+        y = over_80$speechiness, 
+        z = over_80$energy, 
+        color = ~over_80$danceability,
+        type = "scatter3d",
+        hoverinfo='text',
+        text= ~paste0(over_80$name, " : ", over_80$artists)
+        ) %>%
   layout(title = "",
+         hovermode='danceability',
          scene = list(xaxis = list(title = "Acousticness"),
-                      yaxis = list(title = "Danceability"),
-                      zaxis = list(title = "Popularity")))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                      yaxis = list(title = "Speechiness"),
+                      zaxis = list(title = "Energy")))
 
 
 
@@ -432,4 +409,6 @@ ggplot(centers, aes(x = reorder(variable, value), y = value)) +
   theme(panel.border = element_rect(colour = "black", fill=NA), legend.position="none") +
   labs(x = NULL)
 
+
+filter(tracks, danceability > .95)
 
